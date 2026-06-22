@@ -1,0 +1,61 @@
+{
+  "_comentario": "Inventario de activos de la corporacion logistica internacional. Este archivo es la implementacion concreta de la correccion del TC1: en vez de un solo vector (alpha, beta, gamma) global, cada categoria de activo tiene su propio vector, derivado de su exposicion y de su rol en el negocio. Los pesos cold-start (0.40/0.35/0.25) se mantienen como caso por defecto y como prior para la recalibracion (ver engine/recalibration.py).",
+
+  "organizacion": "Corporacion Logistica Internacional (escenario Caso 3)",
+  "apetito_riesgo_tau": 1.0,
+  "_nota_tau": "Multiplicador sobre los umbrales del Policy Gate. tau<1 = organizacion mas conservadora (ej. banco), tau>1 = mayor apetito de riesgo (ej. startup). 1.0 = neutral, usado para esta demo.",
+
+  "categorias": {
+    "expuesto_critico": {
+      "descripcion": "Activos accesibles desde internet, en la ruta critica del negocio (cara al cliente).",
+      "justificacion_pesos": "Beta (explotabilidad) se pondera mas alto porque un activo expuesto a internet es objetivo activo de atacantes reales; lo que importa no es solo la severidad teorica (CVSS) sino la probabilidad de explotacion observada (EPSS).",
+      "alpha": 0.35,
+      "beta": 0.40,
+      "gamma": 0.25
+    },
+    "interno": {
+      "descripcion": "Activos accesibles solo desde la red interna, usados por otros servicios.",
+      "justificacion_pesos": "Vector balanceado, equivalente al cold-start original del TC1 (calibrado con el dataset publico NVD/EPSS), porque no hay evidencia contextual para inclinar el peso hacia ninguna dimension en particular.",
+      "alpha": 0.40,
+      "beta": 0.35,
+      "gamma": 0.25
+    },
+    "aislado_bajo_impacto": {
+      "descripcion": "Activos sin interfaz de red externa real, bajo radio de impacto.",
+      "justificacion_pesos": "Gamma (criticidad contextual) se pondera mas alto porque en un activo aislado, la severidad y explotabilidad teoricas (CVSS/EPSS) importan poco si el contexto (alcance, exposicion real) indica que el componente no es practicamente alcanzable por un atacante externo.",
+      "alpha": 0.30,
+      "beta": 0.25,
+      "gamma": 0.45
+    }
+  },
+
+  "activos": [
+    {
+      "id": "tracking-api",
+      "nombre": "API de Tracking Publico",
+      "categoria": "expuesto_critico",
+      "L_criticality_level": 1.0,
+      "NE_network_exposure": 1.0,
+      "D_dependence": 0.60,
+      "path_codigo": "services/tracking-api"
+    },
+    {
+      "id": "inventory-service",
+      "nombre": "Servicio Interno de Inventario",
+      "categoria": "interno",
+      "L_criticality_level": 0.5,
+      "NE_network_exposure": 0.5,
+      "D_dependence": 0.40,
+      "path_codigo": "services/inventory-service"
+    },
+    {
+      "id": "logging-utility",
+      "nombre": "Utilidad de Logging",
+      "categoria": "aislado_bajo_impacto",
+      "L_criticality_level": 0.25,
+      "NE_network_exposure": 0.1,
+      "D_dependence": 0.10,
+      "path_codigo": "services/logging-utility"
+    }
+  ]
+}

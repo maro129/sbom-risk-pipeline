@@ -1,0 +1,26 @@
+{
+  "_comentario": "Datos sinteticos que simulan el historial de decisiones de seguridad acumulado por la corporacion logistica durante varios meses de operacion del pipeline. En una organizacion real, estos registros vendrian de post-mortems de incidentes y de revisiones manuales de falsos positivos/negativos del Policy Gate. Se usan aqui para demostrar la Fase 1 (recalibracion continua) descrita en la correccion del TC1, ya que el curso no permite acumular datos reales de produccion.",
+
+  "registros": [
+    {"V": 0.95, "E": 0.90, "C": 0.90, "incidente_materializado": 1},
+    {"V": 0.40, "E": 0.85, "C": 0.95, "incidente_materializado": 1},
+    {"V": 0.98, "E": 0.10, "C": 0.30, "incidente_materializado": 0},
+    {"V": 0.30, "E": 0.05, "C": 0.20, "incidente_materializado": 0},
+    {"V": 0.85, "E": 0.75, "C": 0.85, "incidente_materializado": 1},
+    {"V": 0.20, "E": 0.60, "C": 0.90, "incidente_materializado": 1},
+    {"V": 0.90, "E": 0.08, "C": 0.40, "incidente_materializado": 0},
+    {"V": 0.55, "E": 0.50, "C": 0.60, "incidente_materializado": 1},
+    {"V": 0.15, "E": 0.10, "C": 0.10, "incidente_materializado": 0},
+    {"V": 0.70, "E": 0.65, "C": 0.55, "incidente_materializado": 1},
+    {"V": 0.92, "E": 0.05, "C": 0.20, "incidente_materializado": 0},
+    {"V": 0.45, "E": 0.70, "C": 0.80, "incidente_materializado": 1},
+    {"V": 0.60, "E": 0.15, "C": 0.30, "incidente_materializado": 0},
+    {"V": 0.25, "E": 0.55, "C": 0.85, "incidente_materializado": 1},
+    {"V": 0.80, "E": 0.20, "C": 0.25, "incidente_materializado": 0},
+    {"V": 0.50, "E": 0.45, "C": 0.50, "incidente_materializado": 0},
+    {"V": 0.65, "E": 0.80, "C": 0.70, "incidente_materializado": 1},
+    {"V": 0.35, "E": 0.30, "C": 0.40, "incidente_materializado": 0},
+    {"V": 0.88, "E": 0.60, "C": 0.65, "incidente_materializado": 1},
+    {"V": 0.10, "E": 0.05, "C": 0.15, "incidente_materializado": 0}
+  ]
+}

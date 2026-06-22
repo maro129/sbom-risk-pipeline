@@ -1,0 +1,33 @@
+version: "3.9"
+
+# Simula la migracion a arquitectura de contenedores en la nube de la
+# corporacion logistica internacional (escenario de negocio del Caso 3).
+#
+# tracking-api    -> red publica (expuesto a internet)
+# inventory-service -> red interna (solo otros servicios)
+# logging-utility -> red interna aislada (sin puertos publicados)
+
+services:
+  tracking-api:
+    build: ./services/tracking-api
+    ports:
+      - "5000:5000"   # unico servicio con puerto publicado hacia "internet"
+    networks:
+      - red_publica
+      - red_interna
+
+  inventory-service:
+    build: ./services/inventory-service
+    networks:
+      - red_interna
+    # sin "ports": no es accesible desde fuera del host
+
+  logging-utility:
+    build: ./services/logging-utility
+    networks:
+      - red_interna
+    # sin "ports": aislado, solo accesible por otros contenedores internos
+
+networks:
+  red_publica:
+  red_interna:

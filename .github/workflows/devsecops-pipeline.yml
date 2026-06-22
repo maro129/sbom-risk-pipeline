@@ -1,0 +1,67 @@
+name: DevSecOps Pipeline - SBOM Risk Gate (Caso 3)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  sbom-risk-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Instalar Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Instalar dependencias del motor evaluador
+        run: pip install -r engine/requirements.txt
+
+      - name: Instalar dependencias del agente de IA
+        run: pip install -r ai-agent/requirements.txt
+
+      - name: Generar SBOM y escanear vulnerabilidades por microservicio
+        run: |
+          mkdir -p reports
+          for SERVICIO in tracking-api inventory-service logging-utility; do
+            echo ">>> Procesando $SERVICIO"
+            trivy fs --format cyclonedx --output "reports/${SERVICIO}-sbom.json" "./services/${SERVICIO}"
+            trivy fs --format json --output "reports/${SERVICIO}.json" "./services/${SERVICIO}"
+          done
+
+      - name: Ejecutar Engine Evaluador (R = f(V,E,C) por categoria de activo)
+        id: evaluador
+        run: python engine/evaluator.py reports
+        continue-on-error: true   # se evalua el resultado explicitamente en el paso siguiente
+
+      - name: Ejecutar agente de IA - deteccion de typosquatting
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          for SERVICIO in tracking-api inventory-service logging-utility; do
+            python ai-agent/typosquatting_detector.py "reports/${SERVICIO}-sbom.json" \
+              | tee "reports/${SERVICIO}-typosquatting.json"
+          done
+
+      - name: Subir reportes como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: risk-reports
+          path: reports/
+
+      - name: Aplicar decision del Policy Gate
+        run: |
+          if [ "${{ steps.evaluador.outcome }}" = "failure" ]; then
+            echo "::error::Policy Gate BLOQUEO el despliegue: uno o mas activos superan el umbral de riesgo (ver reports/risk_report.json)."
+            exit 1
+          fi
+          echo "Policy Gate: PASS. Despliegue autorizado."
