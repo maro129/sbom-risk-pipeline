@@ -29,19 +29,25 @@ jobs:
       - name: Instalar dependencias del agente de IA
         run: pip install -r ai-agent/requirements.txt
 
-      - name: Generar SBOM y escanear vulnerabilidades por microservicio
+      - name: Generar SBOM CycloneDX por microservicio (Syft/Trivy)
         run: |
           mkdir -p reports
           for SERVICIO in tracking-api inventory-service logging-utility; do
-            echo ">>> Procesando $SERVICIO"
+            echo ">>> Generando SBOM CycloneDX de $SERVICIO"
             trivy fs --format cyclonedx --output "reports/${SERVICIO}-sbom.json" "./services/${SERVICIO}"
-            trivy fs --format json --output "reports/${SERVICIO}.json" "./services/${SERVICIO}"
+          done
+
+      - name: Escanear el SBOM generado (el evaluador procesa ESTE JSON, no un escaneo aparte)
+        run: |
+          for SERVICIO in tracking-api inventory-service logging-utility; do
+            echo ">>> Escaneando SBOM de $SERVICIO en busca de CVEs"
+            trivy sbom "reports/${SERVICIO}-sbom.json" --format json --output "reports/${SERVICIO}.json"
           done
 
       - name: Ejecutar Engine Evaluador (R = f(V,E,C) por categoria de activo)
         id: evaluador
         run: python engine/evaluator.py reports
-        continue-on-error: true   # se evalua el resultado explicitamente en el paso siguiente
+        continue-on-error: true   # se evalua el resultado explicitamente en el paso final del gate
 
       - name: Ejecutar agente de IA - deteccion de typosquatting
         env:
@@ -58,10 +64,36 @@ jobs:
           name: risk-reports
           path: reports/
 
-      - name: Aplicar decision del Policy Gate
+      # ---- BLOQUEO FISICO HACIA DOCKER HUB ----
+      # Los siguientes 3 pasos SOLO se ejecutan si el Engine Evaluador dio PASS.
+      # Si dio BLOCK (outcome != success), GitHub Actions los muestra como
+      # "Skipped" -- esa es la evidencia visual de que el despliegue a
+      # Docker Hub fue fisicamente detenido por el Policy Gate.
+
+      - name: Configurar Docker Buildx
+        if: steps.evaluador.outcome == 'success'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login en Docker Hub
+        if: steps.evaluador.outcome == 'success'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build y push de las imagenes a Docker Hub
+        if: steps.evaluador.outcome == 'success'
+        run: |
+          for SERVICIO in tracking-api inventory-service logging-utility; do
+            echo ">>> Construyendo y subiendo $SERVICIO"
+            docker build -t "${{ secrets.DOCKERHUB_USERNAME }}/sbom-${SERVICIO}:latest" "./services/${SERVICIO}"
+            docker push "${{ secrets.DOCKERHUB_USERNAME }}/sbom-${SERVICIO}:latest"
+          done
+
+      - name: Aplicar decision final del Policy Gate
         run: |
           if [ "${{ steps.evaluador.outcome }}" = "failure" ]; then
-            echo "::error::Policy Gate BLOQUEO el despliegue: uno o mas activos superan el umbral de riesgo (ver reports/risk_report.json)."
+            echo "::error::Policy Gate BLOQUEO el despliegue: uno o mas activos superan el umbral de riesgo (ver reports/risk_report.json). El push a Docker Hub fue detenido."
             exit 1
           fi
-          echo "Policy Gate: PASS. Despliegue autorizado."
+          echo "Policy Gate: PASS. Despliegue autorizado y publicado en Docker Hub."
