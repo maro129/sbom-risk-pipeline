@@ -1,0 +1,8 @@
+[
+  {
+    "type": "library",
+    "name": "reqeusts",
+    "version": "2.31.0",
+    "purl": "pkg:pypi/reqeusts@2.31.0"
+  }
+]
