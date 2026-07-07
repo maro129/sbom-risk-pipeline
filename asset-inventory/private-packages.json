@@ -1,0 +1,12 @@
+{
+  "_comentario": "Lista de paquetes internos privados de la Corporacion Logistica Internacional. Si alguno de estos nombres aparece como dependencia publica en el SBOM, es una alerta de Dependency Confusion: un atacante habria publicado un paquete con el mismo nombre en PyPI/npm para que el pipeline lo descargue en lugar de la version interna legitima.",
+  "organizacion": "Corporacion Logistica Internacional",
+  "paquetes_internos_privados": [
+    "logistica-core",
+    "tracking-utils",
+    "cargo-api-client",
+    "fleet-connector",
+    "despacho-engine",
+    "almacen-sdk"
+  ]
+}
