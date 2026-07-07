@@ -1,1 +1,3 @@
-anthropic==0.40.0
+# OpenRouter usa solo urllib de la libreria estandar de Python
+# No requiere instalacion de SDK adicional
+ 
