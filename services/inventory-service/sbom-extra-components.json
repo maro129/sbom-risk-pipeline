@@ -1,0 +1,9 @@
+[
+  {
+    "type": "library",
+    "name": "logistica-core",
+    "version": "9.9.9",
+    "purl": "pkg:pypi/logistica-core@9.9.9",
+    "_nota": "Simula un ataque de Dependency Confusion: paquete interno de la corporacion publicado maliciosamente en PyPI publico con version 9.9.9 (numero alto para ganar sobre la version interna legitima 1.2.0)"
+  }
+]
