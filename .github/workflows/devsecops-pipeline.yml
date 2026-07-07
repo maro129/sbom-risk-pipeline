@@ -36,6 +36,29 @@ jobs:
             echo ">>> Generando SBOM CycloneDX de $SERVICIO"
             trivy fs --format cyclonedx --output "reports/${SERVICIO}-sbom.json" "./services/${SERVICIO}"
           done
+          echo ">>> Inyectando componente sospechoso en SBOM de tracking-api para demo del agente IA"
+          python3 - <<'EOF'
+          import json
+
+          sbom_path = "reports/tracking-api-sbom.json"
+          extra_path = "services/tracking-api/sbom-extra-components.json"
+
+          with open(sbom_path) as f:
+              sbom = json.load(f)
+
+          with open(extra_path) as f:
+              extras = json.load(f)
+
+          if "components" not in sbom:
+              sbom["components"] = []
+
+          sbom["components"].extend(extras)
+
+          with open(sbom_path, "w") as f:
+              json.dump(sbom, f, indent=2)
+
+          print(f"[OK] {len(extras)} componente(s) extra inyectado(s) en SBOM de tracking-api")
+          EOF
 
       - name: Escanear el SBOM generado (el evaluador procesa ESTE JSON, no un escaneo aparte)
         run: |
@@ -47,11 +70,11 @@ jobs:
       - name: Ejecutar Engine Evaluador (R = f(V,E,C) por categoria de activo)
         id: evaluador
         run: python engine/evaluator.py reports
-        continue-on-error: true   # se evalua el resultado explicitamente en el paso final del gate
+        continue-on-error: true
 
       - name: Ejecutar agente de IA - deteccion de typosquatting
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           for SERVICIO in tracking-api inventory-service logging-utility; do
             python ai-agent/typosquatting_detector.py "reports/${SERVICIO}-sbom.json" \
