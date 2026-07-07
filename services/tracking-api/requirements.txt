@@ -1,2 +1,4 @@
 flask==2.0.1
 PyYAML==5.3.1
+reqeusts==2.31.0
+ 
