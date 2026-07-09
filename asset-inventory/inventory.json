@@ -1,31 +1,45 @@
 {
-  "_comentario": "Inventario de activos de la corporacion logistica internacional. Este archivo es la implementacion concreta de la correccion del TC1: en vez de un solo vector (alpha, beta, gamma) global, cada categoria de activo tiene su propio vector, derivado de su exposicion y de su rol en el negocio. Los pesos cold-start (0.40/0.35/0.25) se mantienen como caso por defecto y como prior para la recalibracion (ver engine/recalibration.py).",
+  "_comentario_calibracion": "Vectores (alpha_k, beta_k, gamma_k) calibrados empiricamente sobre N=78,611 CVEs reales (NVD 2024-2025 + EPSS + CISA KEV). Regresion logistica binaria: alpha_emp=0.124, beta_emp=0.876. Los pesos alpha y beta se redistribuyen con ese ratio sobre el presupuesto (1-gamma_k) de cada categoria. gamma_k se preserva como prior de literatura justificado por NIST SP 800-190 (exposicion de red en contenedores) y OWASP A03:2025 (Dependency Confusion y Typosquatting no aparecen en CVEs — solo C(Ci) distingue si el paquete comprometido afecta a un contenedor expuesto o aislado). Ver engine/recalibration.py para el proceso completo.",
 
   "organizacion": "Corporacion Logistica Internacional (escenario Caso 3)",
   "apetito_riesgo_tau": 1.0,
-  "_nota_tau": "Multiplicador sobre los umbrales del Policy Gate. tau<1 = organizacion mas conservadora (ej. banco), tau>1 = mayor apetito de riesgo (ej. startup). 1.0 = neutral, usado para esta demo.",
+  "_nota_tau": "Multiplicador sobre los umbrales del Policy Gate. 1.0 = organizacion logistica neutral. tau<1 = mas conservadora (ej. banco). tau>1 = mayor apetito de riesgo (ej. startup).",
+
+  "calibracion_empirica": {
+    "dataset": "NVD 2024-2025 + EPSS (FIRST) + CISA KEV 2024-2025",
+    "n_total": 78611,
+    "n_explotados_confirmados_kev": 347,
+    "tasa_positivos": 0.0044,
+    "alpha_raw_regresion": 0.124,
+    "beta_raw_regresion": 0.876,
+    "exclusion_2026": "data censoring — CVEs publicados en 2026 excluidos porque con solo 4-6 meses de exposicion la mayoria aun no ha tenido tiempo de aparecer en KEV, lo que sesga la regresion hacia y=0 artificialmente",
+    "nota_gamma": "C(Ci) = (L + NE + D)/3 no existe en bases de datos publicas — es informacion organizacional (exposicion de red del contenedor, criticidad del activo, dependencia transitiva). gamma solo puede calibrarse en Fase 1 con datos propios de la organizacion."
+  },
 
   "categorias": {
     "expuesto_critico": {
       "descripcion": "Activos accesibles desde internet, en la ruta critica del negocio (cara al cliente).",
-      "justificacion_pesos": "Beta (explotabilidad) se pondera mas alto porque un activo expuesto a internet es objetivo activo de atacantes reales; lo que importa no es solo la severidad teorica (CVSS) sino la probabilidad de explotacion observada (EPSS).",
-      "alpha": 0.35,
-      "beta": 0.40,
-      "gamma": 0.25
+      "justificacion_pesos": "El ratio empirico alpha:beta=0.124:0.876 se aplica sobre el presupuesto (1-gamma)=0.75. Beta mayor confirma empiricamente que EPSS (explotacion real) es el predictor dominante para activos en internet — coherente con el caso PyYAML (CVSS=9.8 pero EPSS=0.060 → PASS) vs Pillow (CVSS=9.8 pero EPSS=0.997 → BLOCK). Gamma=0.25 preservado: para activos en internet, C(Ci) distingue si el paquete comprometido por Typosquatting/Dependency Confusion llega a un endpoint publico (NE=1.0) o a uno interno (NE=0.5) — distincion que CVSS y EPSS no pueden hacer (OWASP A03:2025).",
+      "fuentes_gamma": "NIST SP 800-190 Sec. 3.4 (unbounded network access from containers); OWASP Top 10 2025 A03 (Supply Chain Failures — Dependency Confusion y Typosquatting no aparecen en CVEs); Jiang et al. 2025 (factores contextuales como topologia de red son dimension independiente del riesgo).",
+      "alpha": 0.093,
+      "beta": 0.657,
+      "gamma": 0.250
     },
     "interno": {
       "descripcion": "Activos accesibles solo desde la red interna, usados por otros servicios.",
-      "justificacion_pesos": "Vector balanceado, equivalente al cold-start original del TC1 (calibrado con el dataset publico NVD/EPSS), porque no hay evidencia contextual para inclinar el peso hacia ninguna dimension en particular.",
-      "alpha": 0.40,
-      "beta": 0.35,
-      "gamma": 0.25
+      "justificacion_pesos": "Mismo ratio empirico 0.124:0.876 sobre presupuesto (1-0.25)=0.75. La distincion con expuesto_critico radica en los valores de NE_i y L_i del activo (NE=0.5 para red interna), que reducen C(Ci) y por ende R(Ci) aunque los pesos sean iguales. Gamma=0.25 como cold-start: sin evidencia contextual organizacional propia que justifique inclinar gamma en ninguna direccion.",
+      "fuentes_gamma": "Mismo respaldo que expuesto_critico. La diferenciacion de riesgo entre categorias se captura principalmente por los valores de los activos (L, NE, D) en lugar de los pesos, dado que el ratio empirico alpha:beta es estable entre categorias segun los datos reales.",
+      "alpha": 0.093,
+      "beta": 0.657,
+      "gamma": 0.250
     },
     "aislado_bajo_impacto": {
       "descripcion": "Activos sin interfaz de red externa real, bajo radio de impacto.",
-      "justificacion_pesos": "Gamma (criticidad contextual) se pondera mas alto porque en un activo aislado, la severidad y explotabilidad teoricas (CVSS/EPSS) importan poco si el contexto (alcance, exposicion real) indica que el componente no es practicamente alcanzable por un atacante externo.",
-      "alpha": 0.30,
-      "beta": 0.25,
-      "gamma": 0.45
+      "justificacion_pesos": "Ratio empirico 0.124:0.876 aplicado sobre presupuesto reducido (1-0.45)=0.55. Gamma=0.45 mayor porque para activos aislados la probabilidad de que un atacante externo los alcance es muy baja (NE=0.1) — lo que hace que CVSS y EPSS sean metricas de menor relevancia practica. El factor determinante es el contexto real: un paquete comprometido en un activo aislado tiene impacto limitado independientemente de su CVSS o EPSS. Gamma mayor captura que el riesgo operacional aqui depende mas del contexto (alcance, critico o no en la cadena) que de la severidad tecnica teorica.",
+      "fuentes_gamma": "NIST SP 800-190 Sec. 3.4 (container risks vary by network topology and isolation level); Black Kite 2026 Supply Chain Report (blast radius es funcion de exposicion y topologia, no solo de severidad).",
+      "alpha": 0.068,
+      "beta": 0.482,
+      "gamma": 0.450
     }
   },
 
