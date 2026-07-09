@@ -66,7 +66,7 @@ Coherente con el caso empírico del TC2: PyYAML (CVSS=9.8, EPSS=0.060 → PASS) 
 | Microservicio | V | E (EPSS) | C | R_score | Policy Gate |
 |---|---|---|---|---|---|
 | API Tracking Público (PyYAML) | 0.980 | 0.060 | 0.867 | **3.47** | PASS |
-| Serv. Inventario (Pillow 8.1.0) | 0.750 | **0.997** | 0.467 | **8.42** | **BLOCK ❌** |
+| Serv. Inventario (Pillow 8.1.0) | **0.980** | **0.997** | 0.467 | **8.63** | **BLOCK ❌** |
 | Utilidad Logging (Werkzeug) | 0.750 | 0.555 | 0.150 | **3.86** | PASS |
 
 ### The Repair (Run #2 — Pillow 10.2.0, EPSS=0.013)
@@ -76,7 +76,7 @@ Coherente con el caso empírico del TC2: PyYAML (CVSS=9.8, EPSS=0.060 → PASS) 
 | Serv. Inventario (Pillow 10.2.0) | **1.95** | PASS ✅ |
 | Utilidad Logging | 3.86 | PASS ✅ |
 
-**Observación clave:** PyYAML tiene CVSS=9.8 (idéntico a Pillow) pero EPSS=0.060 → R_score=3.47 (PASS). Pillow tiene EPSS=0.997 → R_score=8.42 (BLOCK). Los pesos calibrados empíricamente capturan correctamente que EPSS es el predictor dominante.
+**Observación clave:** PyYAML tiene CVSS=9.8 (idéntico a Pillow) pero EPSS=0.060 → R_score=3.47 (PASS). Pillow tiene el mismo CVSS=9.8 pero EPSS=0.997 → R_score=8.63 (BLOCK). Los pesos calibrados empíricamente capturan correctamente que EPSS es el predictor dominante: mismo CVSS, decisión de despliegue opuesta.
 
 ---
 
@@ -131,10 +131,12 @@ Donde:
 Calibración empírica (N=78,611 CVEs, NVD 2024-2025 + EPSS + CISA KEV):
   α_emp=0.124, β_emp=0.876 → EPSS es 7× más predictivo que CVSS
 
-Umbrales del Policy Gate:
+Umbrales del Policy Gate (aproximación crisp del sistema difuso Mamdani de 5 conjuntos,
+ver Sección 2.4 del informe — el soporte real de MEDIO_ALTO/"PASS CON ALERTA" es un
+trapecio 4.0-5.0-6.5-7.5, no un corte discreto en 5.0):
   R_score ≥ 7.5  → BLOCK (hard-fail + detener Docker Hub)
-  5.0 ≤ R < 7.5  → PASS CON ALERTA
-  R < 5.0        → PASS
+  4.0 ≤ R < 7.5  → PASS CON ALERTA
+  R < 4.0        → PASS
 ```
 
 ---
