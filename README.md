@@ -1,9 +1,9 @@
 # Pipeline DevSecOps Inteligente y Quality Gates en la Cadena de Suministro
 
-**CBS07 - Seguridad de Software - Trabajo Calificado N°2 - Caso 3**  
+**CBS07 - Seguridad de Software - Trabajo Calificado N°2 - Caso 3**
 Universidad Nacional de Ingeniería — Facultad de Ingeniería Eléctrica y Electrónica
 
-**Integrantes:** Gavino Poma, María Olivia / Rau Zavala, Jefferson Pedro  
+**Integrantes:** Gavino Poma, María Olivia / Rau Zavala, Jefferson Pedro
 **Docente:** Mg. Ing. Juan Carlos Tovar — Sección M
 
 ---
@@ -12,26 +12,41 @@ Universidad Nacional de Ingeniería — Facultad de Ingeniería Eléctrica y Ele
 
 Una corporación logística internacional migra su arquitectura a contenedores en la nube. Este repositorio implementa un pipeline DevSecOps que:
 1. Genera automáticamente el SBOM (Software Bill of Materials) de cada microservicio
-2. Calcula un score de riesgo dinámico **R = f(V,E,C)** con pesos diferenciados por categoría de activo
+2. Calcula un score de riesgo dinámico **R = f(V,E,C)** con pesos calibrados empíricamente por categoría de activo
 3. Bloquea el despliegue a Docker Hub si el riesgo supera el umbral (Policy Gate)
 4. Detecta ataques semánticos en el SBOM (Typosquatting y Dependency Confusion) mediante un agente de IA
 
 ---
 
-## Correcciones respecto al TC1 (feedback del profesor)
+## Calibración empírica de los pesos α, β, γ (Corrección TC1 — feedback del profesor)
 
-El TC1 aplicaba un único vector de pesos global. El profesor identificó dos problemas:
+El feedback del profesor señaló que los pesos originales (0.40, 0.35, 0.25) eran subjetivos. Se calibraron empíricamente mediante regresión logística binaria:
 
-1. **Calibración estática**: los pesos se calcularon una sola vez con un dataset externo. Se corrige con un esquema de dos fases (cold-start + recalibración organizacional via ML).
-2. **Un solo R para todo el inventario**: distintas categorías de activo deben tener distintos vectores de pesos.
+### Dataset de calibración
+| Parámetro | Valor |
+|---|---|
+| Fuentes | NVD JSON 2024-2025 + EPSS (FIRST) + CISA KEV 2024-2025 |
+| N total (CVEs con CVSS + EPSS) | **78,611** |
+| y=1 (explotación confirmada en KEV) | 347 (0.44%) |
+| y=0 (no confirmados) | 78,264 |
+| Exclusión de 2026 | Data censoring — CVEs recientes sin tiempo suficiente para aparecer en KEV |
 
-### Vectores de pesos implementados por categoría
+### Resultado de la regresión logística
+```
+α_emp (CVSS) = 0.124   β_emp (EPSS) = 0.876
+```
+**Hallazgo:** EPSS es 7× más predictivo que CVSS para explotación real confirmada.
+Coherente con el caso empírico del TC2: PyYAML (CVSS=9.8, EPSS=0.060 → PASS) vs Pillow (CVSS=9.8, EPSS=0.997 → BLOCK).
 
-| Categoría | α (CVSS) | β (EPSS) | γ (Contexto) | Justificación |
+### Vectores de pesos finales por categoría
+
+| Categoría | α (CVSS) | β (EPSS) | γ (Contexto) | Justificación γ |
 |---|---|---|---|---|
-| `expuesto_critico` | 0.35 | **0.40** | 0.25 | Activo expuesto a internet: β mayor porque EPSS (explotación real) importa más que CVSS teórico |
-| `interno` | **0.40** | 0.35 | 0.25 | Vector cold-start NVD/EPSS del TC1. Sin evidencia para inclinar hacia ninguna dimensión |
-| `aislado_bajo_impacto` | 0.30 | 0.25 | **0.45** | γ mayor: el contexto real (alcance, exposición) es más determinante que la severidad teórica |
+| `expuesto_critico` | 0.093 | 0.657 | **0.250** | NIST SP 800-190 + OWASP A03:2025: C(Ci) distingue si el paquete comprometido afecta a un contenedor en internet o uno interno — distinción que CVSS/EPSS no pueden hacer |
+| `interno` | 0.093 | 0.657 | **0.250** | Prior cold-start. Diferenciación con expuesto_critico capturada por NE_i=0.5 en el valor del activo |
+| `aislado_bajo_impacto` | 0.068 | 0.482 | **0.450** | γ mayor porque para activos aislados (NE=0.1) el contexto real es más determinante que la severidad teórica |
+
+**Nota sobre γ:** La variable C(Ci) = (L + NE + D)/3 es información organizacional que no existe en ninguna base de datos pública. Por diseño, γ solo puede calibrarse con datos propios de la organización, que es exactamente el propósito de la Fase 1 en `engine/recalibration.py`.
 
 ---
 
@@ -39,118 +54,65 @@ El TC1 aplicaba un único vector de pesos global. El profesor identificó dos pr
 
 | Microservicio | Categoría | Exposición | CVE de demostración |
 |---|---|---|---|
-| `services/tracking-api` | `expuesto_critico` | Internet público | CVE-2020-14343 (PyYAML 5.3.1, CVSS 9.8) |
-| `services/inventory-service` | `interno` | Red interna | CVE-2022-22817 (Pillow 8.1.0, CVSS 8.1) |
+| `services/tracking-api` | `expuesto_critico` | Internet público | CVE-2020-14343 (PyYAML 5.3.1, CVSS 9.8, EPSS 0.060) |
+| `services/inventory-service` | `interno` | Red interna | CVE libwebp (Pillow 8.1.0, CVSS 9.8, EPSS 0.997) |
 | `services/logging-utility` | `aislado_bajo_impacto` | Localhost/aislado | CVE-2019-14806 (Werkzeug 0.15.0, CVSS 5.3) |
 
 ---
 
-## Resultados reales del pipeline (evidencia del TC2)
+## Resultados reales del pipeline (con pesos calibrados empíricamente)
 
-### The Break (Run #1 — Pillow 8.1.0)
-- `inventory-service`: R_score = **8.58** → **BLOCK** ❌
-- `tracking-api`: R_score = 5.84 → PASS CON ALERTA (PyYAML CVSS=9.8 pero EPSS=0.060 → falso positivo evitado)
-- `logging-utility`: R_score = 4.31 → PASS
+### The Break (Run #1 — Pillow 8.1.0, EPSS=0.997)
+| Microservicio | V | E (EPSS) | C | R_score | Policy Gate |
+|---|---|---|---|---|---|
+| API Tracking Público (PyYAML) | 0.980 | 0.060 | 0.867 | **3.47** | PASS |
+| Serv. Inventario (Pillow 8.1.0) | 0.750 | **0.997** | 0.467 | **8.42** | **BLOCK ❌** |
+| Utilidad Logging (Werkzeug) | 0.750 | 0.555 | 0.150 | **3.86** | PASS |
 
-### The Repair (Run #2 — Pillow 10.2.0)
-- `inventory-service`: R_score = **4.21** → **PASS** ✅ (EPSS bajó de 0.997 a 0.013 tras actualizar)
-- Las imágenes se publicaron en Docker Hub: `dmj31/sbom-tracking-api`, `dmj31/sbom-inventory-service`, `dmj31/sbom-logging-utility`
+### The Repair (Run #2 — Pillow 10.2.0, EPSS=0.013)
+| Microservicio | R_score | Policy Gate |
+|---|---|---|
+| API Tracking Público | 3.47 | PASS ✅ |
+| Serv. Inventario (Pillow 10.2.0) | **1.95** | PASS ✅ |
+| Utilidad Logging | 3.86 | PASS ✅ |
+
+**Observación clave:** PyYAML tiene CVSS=9.8 (idéntico a Pillow) pero EPSS=0.060 → R_score=3.47 (PASS). Pillow tiene EPSS=0.997 → R_score=8.42 (BLOCK). Los pesos calibrados empíricamente capturan correctamente que EPSS es el predictor dominante.
 
 ---
 
 ## Agente de IA — Detección de amenazas semánticas
 
-El agente (`ai-agent/typosquatting_detector.py`) detecta dos tipos de ataques que los scanners de CVEs (Trivy/Grype) **no pueden detectar**:
-
-### TYPOSQUATTING (tracking-api)
-- Paquete detectado: `reqeusts==2.31.0` (transposición de 'u' y 'e' en `requests`)
-- Distancia Levenshtein: 2
-- Confirmado por DeepSeek (OpenRouter): *"patrón típico de typosquatting que aprovecha errores comunes de escritura"*
-
-### DEPENDENCY CONFUSION (inventory-service)
-- Paquete detectado: `logistica-core==9.9.9` (nombre idéntico a paquete interno privado)
-- Referencia: `asset-inventory/private-packages.json`
-- Confirmado por DeepSeek: *"coincidencia exacta con paquete interno privado; versión 9.9.9 indica intento de ganar precedencia sobre la versión interna legítima"*
+| Microservicio | Tipo de Ataque | Paquete Detectado | LLM Confirmó |
+|---|---|---|---|
+| tracking-api | **TYPOSQUATTING** | reqeusts==2.31.0 (dist. Levenshtein=2) | SÍ (DeepSeek) |
+| inventory-service | **DEPENDENCY_CONFUSION** | logistica-core==9.9.9 | SÍ (DeepSeek) |
+| logging-utility | NINGUNO | — | N/A |
 
 ---
 
 ## Estructura del repositorio
 
 ```
-services/
-├── tracking-api/          → App Flask + PyYAML 5.3.1 (CVE) + sbom-extra-components.json (typosquatting)
-├── inventory-service/     → App Flask + Pillow 8.1.0→10.2.0 (CVE) + sbom-extra-components.json (dep.confusion)
-└── logging-utility/       → App Flask + Werkzeug 0.15.0 (CVE)
-
-asset-inventory/
-├── inventory.json         → Categorías de activo con vectores (α,β,γ) diferenciados
-└── private-packages.json  → Lista de paquetes internos privados para detección de Dependency Confusion
-
-engine/
-├── evaluator.py           → Motor R=f(V,E,C) con pesos por categoría + integración EPSS real
-├── fuzzy_engine.py        → Lógica difusa Mamdani (5 conjuntos trapezoidales)
-└── recalibration.py       → Recalibración de α,β,γ con ML (regresión logística + shrinkage)
-
-ai-agent/
-└── typosquatting_detector.py → Detección Typosquatting (Levenshtein) + Dependency Confusion + confirmación LLM
-
-data/
-└── historical_incidents_sample.json → 20 registros sintéticos para simular la recalibración organizacional
-
-telemetry/
-└── generate_dashboard.py  → Gráfica comparativa R_score antes/después de la remediación
-
-.github/workflows/
-└── devsecops-pipeline.yml → Pipeline completo: SBOM → Evaluador → Agente IA → Policy Gate → Docker Hub
-```
-
----
-
-## Cómo correrlo localmente
-
-```bash
-# 1. Levantar los 3 microservicios
-docker compose up --build
-
-# 2. Instalar dependencias del motor evaluador
-pip install -r engine/requirements.txt
-
-# 3. Generar SBOM + reporte de vulnerabilidades con Trivy (requiere Trivy instalado)
-./scripts/generate_reports.sh ./reports
-
-# 4. Ejecutar el evaluador (R=f(V,E,C) con pesos por categoría)
-python engine/evaluator.py ./reports
-# Código de salida 1 si algún activo cae en BLOCK
-
-# 5. Simular la recalibración con datos históricos
-python engine/recalibration.py
-
-# 6. Detectar typosquatting/dependency confusion en un SBOM
-export OPENROUTER_API_KEY=tu_api_key
-python ai-agent/typosquatting_detector.py ./reports/tracking-api-sbom.json
-
-# 7. Generar el dashboard comparativo (antes/después)
-pip install -r telemetry/requirements.txt
-python telemetry/generate_dashboard.py ./reports/risk_report.json ./reports/comparacion.png
+services/            → los 3 microservicios (app vulnerable)
+asset-inventory/     → inventario con categorías y vectores (α_k,β_k,γ_k) calibrados
+engine/              → evaluador R=f(V,E,C), lógica difusa, recalibración ML
+ai-agent/            → detección Typosquatting + Dependency Confusion (DeepSeek via OpenRouter)
+data/                → registros sintéticos organizacionales para recalibración Fase 1
+telemetry/           → dashboard comparativo antes/después
+.github/workflows/   → pipeline GitHub Actions completo
 ```
 
 ---
 
 ## Cómo correrlo en GitHub Actions
 
-1. Crear los siguientes secrets en **Settings → Secrets and variables → Actions**:
-
-| Secret | Descripción |
-|---|---|
-| `DOCKERHUB_USERNAME` | Tu usuario de Docker Hub (ej. `dmj31`) |
-| `DOCKERHUB_TOKEN` | Personal Access Token de Docker Hub |
-| `OPENROUTER_API_KEY` | API key de OpenRouter para el agente de IA |
-
-2. Hacer push a `main` — el workflow corre automáticamente.
-
-3. **The Break**: hacer push con una dependencia vulnerable (ej. `Pillow==8.1.0`) → el job falla en rojo → los pasos de Docker Hub aparecen en gris (skipped).
-
-4. **The Repair**: actualizar la dependencia (ej. `Pillow==10.2.0`) → hacer push → el job pasa a verde → las imágenes se publican en Docker Hub.
+1. Configurar secrets en **Settings → Secrets → Actions:**
+   - `DOCKERHUB_USERNAME` → dmj31
+   - `DOCKERHUB_TOKEN` → Personal Access Token Docker Hub
+   - `OPENROUTER_API_KEY` → API key de OpenRouter (DeepSeek)
+2. Hacer push a `main` → el workflow corre automáticamente
+3. **The Break:** con Pillow 8.1.0 → job falla en rojo, pasos de Docker Hub en gris (skipped)
+4. **The Repair:** cambiar a Pillow 10.2.0 → push → job pasa a verde, imágenes publicadas en Docker Hub
 
 ---
 
@@ -160,26 +122,25 @@ python telemetry/generate_dashboard.py ./reports/risk_report.json ./reports/comp
 R(Cᵢ) = α_k · V(Cᵢ) + β_k · E(Cᵢ) + γ_k · C(Cᵢ)
 
 Donde:
-  V(Cᵢ) = max(CVSSᵢⱼ) / 10          → Severidad técnica (NVD/NIST)
-  E(Cᵢ) = max(EPSSᵢⱼ)               → Explotabilidad dinámica (FIRST API)
-  C(Cᵢ) = (Lᵢ + NEᵢ + Dᵢ) / 3      → Criticidad contextual del activo
-  (α_k, β_k, γ_k) = vector de la categoría k del activo
+  V(Cᵢ) = max(CVSSᵢⱼ) / 10        → Severidad técnica (NVD/NIST)
+  E(Cᵢ) = max(EPSSᵢⱼ)             → Explotabilidad dinámica (FIRST API real)
+  C(Cᵢ) = (Lᵢ + NEᵢ + Dᵢ) / 3    → Criticidad contextual del activo
+  (α_k, β_k, γ_k) = vector de la categoría k (calibrado empiricamente)
   R_score = R(Cᵢ) × 10 ∈ [0,10]
+
+Calibración empírica (N=78,611 CVEs, NVD 2024-2025 + EPSS + CISA KEV):
+  α_emp=0.124, β_emp=0.876 → EPSS es 7× más predictivo que CVSS
 
 Umbrales del Policy Gate:
   R_score ≥ 7.5  → BLOCK (hard-fail + detener Docker Hub)
-  5.0 ≤ R < 7.5  → PASS CON ALERTA (parche en 7 días)
+  5.0 ≤ R < 7.5  → PASS CON ALERTA
   R < 5.0        → PASS
 ```
 
 ---
 
-## Secrets configurados
+## Repositorio
 
-```
-DOCKERHUB_USERNAME  → dmj31
-DOCKERHUB_TOKEN     → configurado (no expuesto)
-OPENROUTER_API_KEY  → configurado (no expuesto)
-```
+`github.com/maro129/sbom-risk-pipeline`
 
 > ⚠️ Nunca subir API keys ni tokens directamente al código. Siempre usar GitHub Secrets.
